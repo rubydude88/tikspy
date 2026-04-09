@@ -5,11 +5,8 @@ let commentsData = [];
 let currentTab = 'videos';
 let settingsOpen = false;
 
-// Tracks which comment_id is currently loading or expanded
 // { [comment_id]: 'loading' | 'open' | 'closed' }
 const replyState = {};
-
-// Tracks the current video_url being viewed in comments tab
 let currentVideoUrl = '';
 
 // ── Settings ─────────────────────────────────────────────────────
@@ -49,17 +46,14 @@ async function saveApiKey() {
   const key = document.getElementById('api-key-input').value.trim();
   const feedback = document.getElementById('settings-feedback');
   const btn = document.getElementById('btn-save-key');
-
   if (!key) {
     feedback.className = 'settings-feedback err';
     feedback.textContent = 'Please enter a key.';
     return;
   }
-
   btn.disabled = true;
   btn.textContent = 'Saving…';
   feedback.textContent = '';
-
   try {
     localStorage.setItem('apify_api_key', key);
     feedback.className = 'settings-feedback ok';
@@ -104,9 +98,7 @@ function formatDate(iso) {
     const hh = String(d.getHours()).padStart(2, '0');
     const mm = String(d.getMinutes()).padStart(2, '0');
     return `${mo} ${day} ${yr} · ${hh}:${mm}`;
-  } catch {
-    return iso;
-  }
+  } catch { return iso; }
 }
 
 function formatDuration(secs) {
@@ -132,9 +124,7 @@ function relativeTime(iso) {
     if (mo < 12) return `${mo} month${mo !== 1 ? 's' : ''} ago`;
     const yr = Math.floor(mo / 12);
     return `${yr} year${yr !== 1 ? 's' : ''} ago`;
-  } catch {
-    return '—';
-  }
+  } catch { return '—'; }
 }
 
 function truncate(str, len) {
@@ -150,7 +140,6 @@ function showError(msg) {
   el._timer = setTimeout(() => el.classList.add('hidden'), 6000);
 }
 
-// ── Skeleton loading ─────────────────────────────────────────────
 function showLoading(tbodyId, colCount) {
   const tbody = document.getElementById(tbodyId);
   tbody.innerHTML = '';
@@ -158,13 +147,9 @@ function showLoading(tbodyId, colCount) {
     const tr = document.createElement('tr');
     for (let c = 0; c < colCount; c++) {
       const td = document.createElement('td');
-      if (c === 0) {
-        td.innerHTML = '<span class="skeleton skeleton-thumb"></span>';
-      } else if (c === 1) {
-        td.innerHTML = '<span class="skeleton skeleton-text-long"></span>';
-      } else {
-        td.innerHTML = '<span class="skeleton skeleton-text-short"></span>';
-      }
+      if (c === 0) td.innerHTML = '<span class="skeleton skeleton-thumb"></span>';
+      else if (c === 1) td.innerHTML = '<span class="skeleton skeleton-text-long"></span>';
+      else td.innerHTML = '<span class="skeleton skeleton-text-short"></span>';
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
@@ -180,17 +165,10 @@ function setButtonLoading(btn, loading) {
 // ── Fetch videos ─────────────────────────────────────────────────
 async function fetchVideos() {
   const username = document.getElementById('username').value.trim();
-  if (!username) {
-    showError('Please enter a TikTok username.');
-    return;
-  }
+  if (!username) { showError('Please enter a TikTok username.'); return; }
 
   const api_key = localStorage.getItem('apify_api_key') || '';
-  if (!api_key) {
-    showError('Please save your API key first.');
-    renderVideosEmpty();
-    return;
-  }
+  if (!api_key) { showError('Please save your API key first.'); renderVideosEmpty(); return; }
 
   const limit = parseInt(document.getElementById('limit').value) || 30;
   const date_from = document.getElementById('date_from').value || null;
@@ -209,11 +187,7 @@ async function fetchVideos() {
       body: JSON.stringify({ username, api_key, limit, date_from, date_to }),
     });
     const data = await res.json();
-    if (data.error) {
-      showError(data.error);
-      renderVideosEmpty();
-      return;
-    }
+    if (data.error) { showError(data.error); renderVideosEmpty(); return; }
     videosData = data.videos || [];
     renderVideosTable();
     populateVideoDropdown();
@@ -231,41 +205,31 @@ async function fetchVideos() {
 
 function renderVideosEmpty() {
   document.getElementById('videos-tbody').innerHTML = `
-    <tr class="empty-state-row">
-      <td colspan="9">
-        <div class="empty-state">
-          <div class="empty-icon">&#9675;</div>
-          <div>No videos found.</div>
-        </div>
-      </td>
-    </tr>`;
+    <tr class="empty-state-row"><td colspan="9">
+      <div class="empty-state"><div class="empty-icon">&#9675;</div><div>No videos found.</div></div>
+    </td></tr>`;
 }
 
 function renderVideosTable() {
   const tbody = document.getElementById('videos-tbody');
-  if (!videosData.length) {
-    renderVideosEmpty();
-    return;
-  }
+  if (!videosData.length) { renderVideosEmpty(); return; }
   tbody.innerHTML = '';
   videosData.forEach((v) => {
     const tr = document.createElement('tr');
     tr.title = v.caption || '';
     tr.addEventListener('click', () => tr.classList.toggle('selected'));
 
+    // col1: thumbnail
     const tdThumb = document.createElement('td');
     if (v.thumbnail) {
       const img = document.createElement('img');
-      img.src = v.thumbnail;
-      img.alt = '';
-      img.className = 'thumbnail';
-      img.onerror = () => { img.replaceWith(makePlaceholderThumb()); };
+      img.src = v.thumbnail; img.alt = ''; img.className = 'thumbnail';
+      img.onerror = () => img.replaceWith(makePlaceholderThumb());
       tdThumb.appendChild(img);
-    } else {
-      tdThumb.appendChild(makePlaceholderThumb());
-    }
+    } else { tdThumb.appendChild(makePlaceholderThumb()); }
     tr.appendChild(tdThumb);
 
+    // col2: caption
     const tdCap = document.createElement('td');
     const capDiv = document.createElement('div');
     capDiv.className = 'caption-cell';
@@ -274,33 +238,33 @@ function renderVideosTable() {
     tdCap.appendChild(capDiv);
     tr.appendChild(tdCap);
 
+    // col3: published
     const tdPub = document.createElement('td');
     tdPub.className = 'date-cell hide-mobile';
     tdPub.textContent = formatDate(v.published);
     tr.appendChild(tdPub);
 
+    // col4: duration
     const tdDur = document.createElement('td');
     tdDur.className = 'num-cell hide-mobile';
     tdDur.textContent = formatDuration(v.duration);
     tr.appendChild(tdDur);
 
+    // col5-8: stats
     tr.appendChild(numCell(v.views));
     tr.appendChild(numCell(v.likes));
     tr.appendChild(numCell(v.comments));
-
     const tdShares = numCell(v.shares);
     tdShares.classList.add('hide-mobile');
     tr.appendChild(tdShares);
 
+    // col9: link
     const tdLink = document.createElement('td');
     tdLink.className = 'link-cell';
     if (v.url) {
       const a = document.createElement('a');
-      a.href = v.url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.title = 'Open on TikTok';
-      a.textContent = '↗';
+      a.href = v.url; a.target = '_blank'; a.rel = 'noopener';
+      a.title = 'Open on TikTok'; a.textContent = '↗';
       tdLink.appendChild(a);
     }
     tr.appendChild(tdLink);
@@ -342,27 +306,20 @@ function populateVideoDropdown() {
 // ── Fetch comments ───────────────────────────────────────────────
 async function fetchComments() {
   const video_url = document.getElementById('video-url-select').value;
-  if (!video_url) {
-    showError('Please select a video (fetch videos first).');
-    return;
-  }
+  if (!video_url) { showError('Please select a video (fetch videos first).'); return; }
 
   const api_key = localStorage.getItem('apify_api_key') || '';
-  if (!api_key) {
-    showError('Please save your API key first.');
-    renderCommentsEmpty();
-    return;
-  }
+  if (!api_key) { showError('Please save your API key first.'); renderCommentsEmpty(); return; }
 
   const count = parseInt(document.getElementById('comment-count').value) || 50;
 
-  // Reset reply state when fetching fresh comments
+  // Reset reply state on fresh fetch
   Object.keys(replyState).forEach(k => delete replyState[k]);
   currentVideoUrl = video_url;
 
   const btn = document.getElementById('btn-fetch-comments');
   setButtonLoading(btn, true);
-  showLoading('comments-tbody', 7);
+  showLoading('comments-tbody', 6);
   document.getElementById('comments-export-row').style.display = 'none';
   document.getElementById('error-banner').classList.add('hidden');
 
@@ -373,11 +330,7 @@ async function fetchComments() {
       body: JSON.stringify({ video_url, api_key, count }),
     });
     const data = await res.json();
-    if (data.error) {
-      showError(data.error);
-      renderCommentsEmpty();
-      return;
-    }
+    if (data.error) { showError(data.error); renderCommentsEmpty(); return; }
     commentsData = data.comments || [];
     renderCommentsTable();
     document.getElementById('comments-count').textContent =
@@ -394,34 +347,25 @@ async function fetchComments() {
 
 function renderCommentsEmpty() {
   document.getElementById('comments-tbody').innerHTML = `
-    <tr class="empty-state-row">
-      <td colspan="7">
-        <div class="empty-state">
-          <div class="empty-icon">&#9675;</div>
-          <div>No comments found.</div>
-        </div>
-      </td>
-    </tr>`;
+    <tr class="empty-state-row"><td colspan="6">
+      <div class="empty-state"><div class="empty-icon">&#9675;</div><div>No comments found.</div></div>
+    </td></tr>`;
 }
 
 function renderCommentsTable() {
   const tbody = document.getElementById('comments-tbody');
-  if (!commentsData.length) {
-    renderCommentsEmpty();
-    return;
-  }
+  if (!commentsData.length) { renderCommentsEmpty(); return; }
   tbody.innerHTML = '';
-  commentsData.forEach((c) => {
-    tbody.appendChild(makeCommentRow(c));
-  });
+  commentsData.forEach((c) => tbody.appendChild(makeCommentRow(c)));
 }
 
+// 6 columns: [avatar] [username] [comment] [likes] [replies] [posted]
 function makeCommentRow(c) {
   const tr = document.createElement('tr');
   tr.dataset.commentId = c.id;
   tr.className = 'comment-row';
 
-  // Avatar
+  // col1: avatar
   const tdAv = document.createElement('td');
   if (c.avatar) {
     const img = document.createElement('img');
@@ -435,13 +379,13 @@ function makeCommentRow(c) {
   }
   tr.appendChild(tdAv);
 
-  // Username
+  // col2: username
   const tdUser = document.createElement('td');
   tdUser.className = 'username-cell';
   tdUser.textContent = c.username || '—';
   tr.appendChild(tdUser);
 
-  // Comment text
+  // col3: comment text
   const tdComment = document.createElement('td');
   const commentDiv = document.createElement('div');
   commentDiv.className = 'comment-cell';
@@ -450,10 +394,10 @@ function makeCommentRow(c) {
   tdComment.appendChild(commentDiv);
   tr.appendChild(tdComment);
 
-  // Likes
+  // col4: likes
   tr.appendChild(numCell(c.likes));
 
-  // Replies — clickable if count > 0
+  // col5: replies — button if count > 0, dash otherwise
   const tdRep = document.createElement('td');
   tdRep.className = 'num-cell hide-mobile';
   if (c.replies > 0 && c.id) {
@@ -469,7 +413,7 @@ function makeCommentRow(c) {
   }
   tr.appendChild(tdRep);
 
-  // Posted
+  // col6: posted
   const tdPost = document.createElement('td');
   tdPost.className = 'date-cell hide-mobile';
   tdPost.textContent = relativeTime(c.posted);
@@ -481,25 +425,14 @@ function makeCommentRow(c) {
 
 // ── Replies ───────────────────────────────────────────────────────
 async function toggleReplies(commentId, replyCount) {
-  const state = replyState[commentId];
-
-  // If already open, collapse
-  if (state === 'open') {
-    collapseReplies(commentId);
-    return;
-  }
-
-  // If already loading, do nothing
-  if (state === 'loading') return;
+  if (replyState[commentId] === 'open') { collapseReplies(commentId); return; }
+  if (replyState[commentId] === 'loading') return;
 
   const btn = document.getElementById(`btn-replies-${commentId}`);
   const api_key = localStorage.getItem('apify_api_key') || '';
 
   replyState[commentId] = 'loading';
-  if (btn) {
-    btn.textContent = '⏳ Loading…';
-    btn.disabled = true;
-  }
+  if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
 
   try {
     const res = await fetch('/scrape/replies', {
@@ -517,70 +450,57 @@ async function toggleReplies(commentId, replyCount) {
     if (data.error) {
       showError(data.error);
       replyState[commentId] = 'closed';
-      if (btn) {
-        btn.textContent = `▶ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`;
-        btn.disabled = false;
-      }
+      if (btn) { btn.textContent = `▶ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`; btn.disabled = false; }
       return;
     }
 
-    const replies = data.replies || [];
-    insertReplyRows(commentId, replies, replyCount);
+    insertReplyRows(commentId, data.replies || []);
     replyState[commentId] = 'open';
-
-    if (btn) {
-      btn.textContent = `▼ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`;
-      btn.disabled = false;
-    }
+    if (btn) { btn.textContent = `▼ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`; btn.disabled = false; }
   } catch (e) {
     showError('Network error fetching replies: ' + e.message);
     replyState[commentId] = 'closed';
-    if (btn) {
-      btn.textContent = `▶ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`;
-      btn.disabled = false;
-    }
+    if (btn) { btn.textContent = `▶ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`; btn.disabled = false; }
   }
 }
 
-function insertReplyRows(commentId, replies, replyCount) {
+function insertReplyRows(commentId, replies) {
   const tbody = document.getElementById('comments-tbody');
-  // Find the parent comment row
   const parentRow = tbody.querySelector(`tr[data-comment-id="${commentId}"]`);
   if (!parentRow) return;
 
-  // Remove any existing reply rows for this comment first
   removeReplyRows(commentId);
 
   if (!replies.length) {
     const emptyTr = document.createElement('tr');
     emptyTr.className = 'reply-row';
     emptyTr.dataset.parentId = commentId;
-    emptyTr.innerHTML = `
-      <td></td>
-      <td colspan="5" class="reply-empty">No replies could be loaded.</td>`;
+    // 6 cols: col1 = indent, col2-6 = message
+    emptyTr.innerHTML = `<td class="reply-indent"><span class="reply-line">└</span></td><td colspan="5" class="reply-empty">No replies could be loaded.</td>`;
     parentRow.insertAdjacentElement('afterend', emptyTr);
     return;
   }
 
-  // Insert reply rows in reverse so insertAdjacentElement('afterend') keeps order
+  // Insert in reverse so afterend keeps correct order
   [...replies].reverse().forEach((r) => {
-    const tr = makeReplyRow(r, commentId);
-    parentRow.insertAdjacentElement('afterend', tr);
+    parentRow.insertAdjacentElement('afterend', makeReplyRow(r, commentId));
   });
 }
 
+// Reply row uses same 6 columns:
+// col1: indent | col2: avatar | col3: username+text (no colspan needed) | col4: likes | col5: — | col6: posted
 function makeReplyRow(r, parentId) {
   const tr = document.createElement('tr');
   tr.className = 'reply-row';
   tr.dataset.parentId = parentId;
 
-  // Indent cell
+  // col1: indent
   const tdIndent = document.createElement('td');
   tdIndent.className = 'reply-indent';
   tdIndent.innerHTML = '<span class="reply-line">└</span>';
   tr.appendChild(tdIndent);
 
-  // Avatar
+  // col2: avatar (small)
   const tdAv = document.createElement('td');
   if (r.avatar) {
     const img = document.createElement('img');
@@ -594,9 +514,8 @@ function makeReplyRow(r, parentId) {
   }
   tr.appendChild(tdAv);
 
-  // Username + text combined (replies are more compact)
+  // col3: username + text stacked
   const tdMain = document.createElement('td');
-  tdMain.colSpan = 2;
   const nameSpan = document.createElement('span');
   nameSpan.className = 'reply-username';
   nameSpan.textContent = r.username || '—';
@@ -608,14 +527,17 @@ function makeReplyRow(r, parentId) {
   tdMain.appendChild(textDiv);
   tr.appendChild(tdMain);
 
-  // Likes
-  const tdLikes = numCell(r.likes);
-  tr.appendChild(tdLikes);
+  // col4: likes
+  tr.appendChild(numCell(r.likes));
 
-  // Posted
+  // col5: empty (no nested replies)
+  const tdEmpty = document.createElement('td');
+  tdEmpty.className = 'hide-mobile';
+  tr.appendChild(tdEmpty);
+
+  // col6: posted
   const tdPost = document.createElement('td');
   tdPost.className = 'date-cell hide-mobile';
-  tdPost.colSpan = 2;
   tdPost.textContent = relativeTime(r.posted);
   tdPost.title = r.posted || '';
   tr.appendChild(tdPost);
@@ -635,8 +557,9 @@ function collapseReplies(commentId) {
 }
 
 function removeReplyRows(commentId) {
-  const tbody = document.getElementById('comments-tbody');
-  tbody.querySelectorAll(`tr[data-parent-id="${commentId}"]`).forEach(r => r.remove());
+  document.getElementById('comments-tbody')
+    .querySelectorAll(`tr[data-parent-id="${commentId}"]`)
+    .forEach(r => r.remove());
 }
 
 function makeAvatarPlaceholder(username, small = false) {
@@ -664,34 +587,22 @@ function downloadBlob(content, filename, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
 
 function flattenVideos(videos) {
   return videos.map(v => ({
-    id: v.id,
-    url: v.url,
-    published: v.published,
-    duration_sec: v.duration,
-    views: v.views,
-    likes: v.likes,
-    comments: v.comments,
-    shares: v.shares,
-    caption: v.caption,
+    id: v.id, url: v.url, published: v.published,
+    duration_sec: v.duration, views: v.views, likes: v.likes,
+    comments: v.comments, shares: v.shares, caption: v.caption,
   }));
 }
 
 function flattenComments(comments) {
   return comments.map(c => ({
-    id: c.id,
-    username: c.username,
-    text: c.text,
-    likes: c.likes,
-    replies: c.replies,
-    posted: c.posted,
+    id: c.id, username: c.username, text: c.text,
+    likes: c.likes, replies: c.replies, posted: c.posted,
   }));
 }
 
@@ -699,7 +610,6 @@ function exportVideosCSV() {
   if (!videosData.length) return;
   downloadBlob(toCSV(flattenVideos(videosData)), 'tikspy_videos.csv', 'text/csv');
 }
-
 function exportVideosXLSX() {
   if (!videosData.length) return;
   const ws = XLSX.utils.json_to_sheet(flattenVideos(videosData));
@@ -707,12 +617,10 @@ function exportVideosXLSX() {
   XLSX.utils.book_append_sheet(wb, ws, 'Videos');
   XLSX.writeFile(wb, 'tikspy_videos.xlsx');
 }
-
 function exportCommentsCSV() {
   if (!commentsData.length) return;
   downloadBlob(toCSV(flattenComments(commentsData)), 'tikspy_comments.csv', 'text/csv');
 }
-
 function exportCommentsXLSX() {
   if (!commentsData.length) return;
   const ws = XLSX.utils.json_to_sheet(flattenComments(commentsData));
