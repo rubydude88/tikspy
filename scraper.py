@@ -20,7 +20,9 @@ def _parse_date(value) -> str | None:
         return None
     try:
         if isinstance(value, (int, float)):
-            return datetime.utcfromtimestamp(value / 1000).isoformat() + "Z"
+            # Handle both seconds and milliseconds timestamps
+            ts = value / 1000 if value > 1e10 else value
+            return datetime.utcfromtimestamp(ts).isoformat() + "Z"
         if isinstance(value, str):
             return value
     except Exception:
@@ -147,10 +149,18 @@ async def scrape_comments(api_key: str, video_url: str, count: int = 50) -> list
         if not isinstance(items, list) or not items:
             raise ValueError("No data returned from Apify for that video URL.")
 
-        comments_dataset_url = items[0].get("commentsData") or items[0].get("commentsCommentsUrl")
-        if not comments_dataset_url:
-            raw_comments = items[0].get("latestComments") or items[0].get("comments") or []
-        else:
+        # Log all keys for debugging so you can see exactly what Apify returns
+        print("DEBUG scrape_comments — items[0] keys:", list(items[0].keys()))
+
+        # Try every known field name Apify has used across actor versions
+        comments_dataset_url = (
+            items[0].get("commentsDatasetUrl")
+            or items[0].get("commentsDatasetId")
+            or items[0].get("commentsData")
+            or items[0].get("datasetUrl")
+        )
+
+        if comments_dataset_url:
             sep = "&" if "?" in comments_dataset_url else "?"
             comments_url = f"{comments_dataset_url}{sep}token={api_key}&limit={count}"
             cresp = await client.get(comments_url)
@@ -159,6 +169,20 @@ async def scrape_comments(api_key: str, video_url: str, count: int = 50) -> list
                     f"Failed to fetch comments dataset: status {cresp.status_code}"
                 )
             raw_comments = cresp.json()
+        else:
+            # Some actor versions embed comments directly in the item
+            raw_comments = (
+                items[0].get("latestComments")
+                or items[0].get("comments")
+                or []
+            )
+            if not raw_comments:
+                raise ValueError(
+                    "Apify did not return any comments data. "
+                    "The video may have comments disabled, or the actor version "
+                    "may not support comment scraping for this URL. "
+                    "Check server logs for the available response keys."
+                )
 
     if not isinstance(raw_comments, list):
         raise ValueError(f"Unexpected comments format: {str(raw_comments)[:200]}")
