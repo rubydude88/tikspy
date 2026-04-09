@@ -119,6 +119,18 @@
   </div>
 
   <!-- COMMENTS PANEL -->
+  <!--
+    6 columns:
+    1. Avatar       (40px)
+    2. Username     (auto)
+    3. Comment      (auto, flex)
+    4. Likes        (70px)
+    5. Replies      (100px, hide-mobile)
+    6. Posted       (110px, hide-mobile)
+
+    Reply rows reuse the same 6 columns:
+    col1 = indent symbol, col2 = avatar, col3 spans comment+username, col4 = likes, col5-6 = posted
+  -->
   <div id="panel-comments" class="panel hidden">
     <div class="controls">
       <div class="controls-row">
@@ -149,8 +161,7 @@
         <thead>
           <tr>
             <th style="width:40px"></th>
-            <th style="width:40px"></th>
-            <th>Username</th>
+            <th style="width:120px">Username</th>
             <th>Comment</th>
             <th style="width:70px">Likes</th>
             <th class="hide-mobile" style="width:100px">Replies</th>
@@ -159,7 +170,7 @@
         </thead>
         <tbody id="comments-tbody">
           <tr class="empty-state-row">
-            <td colspan="7">
+            <td colspan="6">
               <div class="empty-state">
                 <div class="empty-icon">&#9675;</div>
                 <div>Select a video and click <strong>Fetch Comments</strong> to begin</div>
@@ -172,6 +183,6 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
