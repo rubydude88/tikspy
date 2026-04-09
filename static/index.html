@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TikSpy</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%236c63ff'/><circle cx='50' cy='50' r='15' fill='white'/></svg>" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="logo">
+      <span class="logo-icon">&#9679;</span>
+      <span class="logo-text">TikSpy</span>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab active" id="tab-videos" role="tab" aria-selected="true" onclick="switchTab('videos')">Videos</button>
+      <button class="tab" id="tab-comments" role="tab" aria-selected="false" onclick="switchTab('comments')">Comments</button>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-settings" id="btn-settings" onclick="toggleSettings()" title="API Key Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        API Key
+      </button>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
+  <div id="settings-panel" class="settings-panel hidden">
+    <div class="settings-inner">
+      <div class="settings-header">
+        <span>Apify API Key</span>
+        <button class="settings-close" onclick="toggleSettings()" title="Close">&times;</button>
+      </div>
+      <p class="settings-desc">
+        Your key is used to scrape TikTok data via Apify.
+        Get one free at <a href="https://console.apify.com/account/integrations" target="_blank" rel="noopener">console.apify.com</a>.
+      </p>
+      <div class="settings-status" id="settings-status"></div>
+      <form onsubmit="saveApiKey(); return false;">
+        <div class="settings-row">
+          <input id="api-key-input" type="password" placeholder="apify_api_…" autocomplete="off" spellcheck="false" />
+          <button type="button" class="btn-show-key" id="btn-show-key" onclick="toggleKeyVisibility()" title="Show/hide key">&#128065;</button>
+        </div>
+        <div class="settings-actions">
+          <button type="submit" id="btn-save-key">Save Key</button>
+          <span class="settings-feedback" id="settings-feedback"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="settings-overlay" class="settings-overlay hidden" onclick="toggleSettings()"></div>
+
+  <div id="error-banner" class="error-banner hidden" role="alert"></div>
+
+  <!-- VIDEOS PANEL -->
+  <div id="panel-videos" class="panel">
+    <div class="controls">
+      <div class="controls-row">
+        <div class="field">
+          <label for="username">TikTok Username</label>
+          <input id="username" type="text" placeholder="@username or profile URL" autocomplete="off" />
+        </div>
+        <div class="field field-sm">
+          <label for="limit">Max Videos</label>
+          <input id="limit" type="number" value="30" min="1" max="200" />
+        </div>
+        <div class="field field-sm">
+          <label for="date_from">From Date</label>
+          <input id="date_from" type="date" />
+        </div>
+        <div class="field field-sm">
+          <label for="date_to">To Date</label>
+          <input id="date_to" type="date" />
+        </div>
+        <div class="field field-btn">
+          <label>&nbsp;</label>
+          <button id="btn-fetch-videos" onclick="fetchVideos()">Fetch Videos</button>
+        </div>
+      </div>
+      <div class="controls-row controls-row-exports" id="videos-export-row" style="display:none;">
+        <span class="result-count" id="videos-count"></span>
+        <button class="btn-export" onclick="exportVideosCSV()">Export CSV</button>
+        <button class="btn-export" onclick="exportVideosXLSX()">Export XLSX</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table id="videos-table">
+        <thead>
+          <tr>
+            <th style="width:56px"></th>
+            <th>Caption</th>
+            <th class="hide-mobile">Published</th>
+            <th class="hide-mobile" style="width:70px">Duration</th>
+            <th style="width:80px">Views</th>
+            <th style="width:70px">Likes</th>
+            <th style="width:70px">Comments</th>
+            <th class="hide-mobile" style="width:70px">Shares</th>
+            <th style="width:36px"></th>
+          </tr>
+        </thead>
+        <tbody id="videos-tbody">
+          <tr class="empty-state-row">
+            <td colspan="9">
+              <div class="empty-state">
+                <div class="empty-icon">&#9675;</div>
+                <div>Enter a username and click <strong>Fetch Videos</strong> to begin</div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- COMMENTS PANEL -->
+  <div id="panel-comments" class="panel hidden">
+    <div class="controls">
+      <div class="controls-row">
+        <div class="field">
+          <label for="video-url-select">Select Video</label>
+          <select id="video-url-select">
+            <option value="">— fetch videos first —</option>
+          </select>
+        </div>
+        <div class="field field-sm">
+          <label for="comment-count">Max Comments</label>
+          <input id="comment-count" type="number" value="50" min="1" max="500" />
+        </div>
+        <div class="field field-btn">
+          <label>&nbsp;</label>
+          <button id="btn-fetch-comments" onclick="fetchComments()">Fetch Comments</button>
+        </div>
+      </div>
+      <div class="controls-row controls-row-exports" id="comments-export-row" style="display:none;">
+        <span class="result-count" id="comments-count"></span>
+        <button class="btn-export" onclick="exportCommentsCSV()">Export CSV</button>
+        <button class="btn-export" onclick="exportCommentsXLSX()">Export XLSX</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table id="comments-table">
+        <thead>
+          <tr>
+            <th style="width:40px"></th>
+            <th>Username</th>
+            <th>Comment</th>
+            <th style="width:80px">Likes</th>
+            <th class="hide-mobile" style="width:80px">Replies</th>
+            <th class="hide-mobile" style="width:110px">Posted</th>
+          </tr>
+        </thead>
+        <tbody id="comments-tbody">
+          <tr class="empty-state-row">
+            <td colspan="6">
+              <div class="empty-state">
+                <div class="empty-icon">&#9675;</div>
+                <div>Select a video and click <strong>Fetch Comments</strong> to begin</div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="/static/app.js?v=4"></script>
+</body>
+</html>
