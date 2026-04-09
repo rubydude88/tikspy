@@ -1,21 +1,17 @@
-import os
 import re
 import httpx
 from datetime import datetime
 
 
-APIFY_TOKEN: str = os.getenv("APIFY_API_TOKEN", "")
 BASE_URL = "https://api.apify.com/v2/acts"
 TIMEOUT = 90
 
 
 def _normalize_username(username: str) -> str:
     username = username.strip()
-    # Handle full TikTok URLs
     match = re.search(r"tiktok\.com/@([^/?&]+)", username)
     if match:
         return match.group(1)
-    # Strip leading @
     return username.lstrip("@")
 
 
@@ -33,6 +29,7 @@ def _parse_date(value) -> str | None:
 
 
 async def scrape_videos(
+    api_key: str,
     username: str,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -41,12 +38,12 @@ async def scrape_videos(
     username = _normalize_username(username)
     if not username:
         raise ValueError("Username must not be empty")
-    if not APIFY_TOKEN:
-        raise ValueError("APIFY_API_TOKEN is not configured. Add it in Replit Secrets.")
+    if not api_key:
+        raise ValueError("API key is required")
 
     url = (
         f"{BASE_URL}/clockworks~tiktok-scraper/run-sync-get-dataset-items"
-        f"?token={APIFY_TOKEN}&timeout={TIMEOUT}&memory=512"
+        f"?token={api_key}&timeout={TIMEOUT}&memory=512"
     )
     body = {
         "profiles": [f"https://www.tiktok.com/@{username}"],
@@ -74,7 +71,6 @@ async def scrape_videos(
         )
         published = _parse_date(published_raw)
 
-        # Date filtering
         if date_from and published:
             try:
                 pub_dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
@@ -125,15 +121,15 @@ async def scrape_videos(
     return videos
 
 
-async def scrape_comments(video_url: str, count: int = 50) -> list[dict]:
+async def scrape_comments(api_key: str, video_url: str, count: int = 50) -> list[dict]:
     if not video_url:
         raise ValueError("Video URL must not be empty")
-    if not APIFY_TOKEN:
-        raise ValueError("APIFY_API_TOKEN is not configured. Add it in Replit Secrets.")
+    if not api_key:
+        raise ValueError("API key is required")
 
     run_url = (
         f"{BASE_URL}/clockworks~tiktok-scraper/run-sync-get-dataset-items"
-        f"?token={APIFY_TOKEN}&timeout={TIMEOUT}&memory=512"
+        f"?token={api_key}&timeout={TIMEOUT}&memory=512"
     )
     body = {
         "postURLs": [video_url],
@@ -151,23 +147,18 @@ async def scrape_comments(video_url: str, count: int = 50) -> list[dict]:
         if not isinstance(items, list) or not items:
             raise ValueError("No data returned from Apify for that video URL.")
 
-        # Comments are stored in a separate linked dataset
-        comments_dataset_url = items[0].get("commentsDatasetUrl", "")
+        comments_dataset_url = items[0].get("commentsData") or items[0].get("commentsCommentsUrl")
         if not comments_dataset_url:
-            raise ValueError(
-                "Apify did not return a comments dataset URL. "
-                "The video may have comments disabled or the actor may not support comment scraping for this URL."
-            )
-
-        # Fetch comments from the linked dataset (append token)
-        sep = "&" if "?" in comments_dataset_url else "?"
-        comments_url = f"{comments_dataset_url}{sep}token={APIFY_TOKEN}&limit={count}"
-        cresp = await client.get(comments_url)
-        if cresp.status_code != 200:
-            raise ValueError(
-                f"Failed to fetch comments dataset: status {cresp.status_code}"
-            )
-        raw_comments = cresp.json()
+            raw_comments = items[0].get("latestComments") or items[0].get("comments") or []
+        else:
+            sep = "&" if "?" in comments_dataset_url else "?"
+            comments_url = f"{comments_dataset_url}{sep}token={api_key}&limit={count}"
+            cresp = await client.get(comments_url)
+            if cresp.status_code != 200:
+                raise ValueError(
+                    f"Failed to fetch comments dataset: status {cresp.status_code}"
+                )
+            raw_comments = cresp.json()
 
     if not isinstance(raw_comments, list):
         raise ValueError(f"Unexpected comments format: {str(raw_comments)[:200]}")
