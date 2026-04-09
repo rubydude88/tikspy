@@ -20,7 +20,6 @@ def _parse_date(value) -> str | None:
         return None
     try:
         if isinstance(value, (int, float)):
-            # Handle both seconds and milliseconds timestamps
             ts = value / 1000 if value > 1e10 else value
             return datetime.utcfromtimestamp(ts).isoformat() + "Z"
         if isinstance(value, str):
@@ -149,10 +148,8 @@ async def scrape_comments(api_key: str, video_url: str, count: int = 50) -> list
         if not isinstance(items, list) or not items:
             raise ValueError("No data returned from Apify for that video URL.")
 
-        # Log all keys for debugging so you can see exactly what Apify returns
         print("DEBUG scrape_comments — items[0] keys:", list(items[0].keys()))
 
-        # Try every known field name Apify has used across actor versions
         comments_dataset_url = (
             items[0].get("commentsDatasetUrl")
             or items[0].get("commentsDatasetId")
@@ -170,7 +167,6 @@ async def scrape_comments(api_key: str, video_url: str, count: int = 50) -> list
                 )
             raw_comments = cresp.json()
         else:
-            # Some actor versions embed comments directly in the item
             raw_comments = (
                 items[0].get("latestComments")
                 or items[0].get("comments")
@@ -203,3 +199,81 @@ async def scrape_comments(api_key: str, video_url: str, count: int = 50) -> list
         })
 
     return comments
+
+
+async def scrape_replies(api_key: str, video_url: str, comment_id: str, count: int = 20) -> list[dict]:
+    if not video_url:
+        raise ValueError("Video URL must not be empty")
+    if not comment_id:
+        raise ValueError("Comment ID must not be empty")
+    if not api_key:
+        raise ValueError("API key is required")
+
+    run_url = (
+        f"{BASE_URL}/clockworks~tiktok-scraper/run-sync-get-dataset-items"
+        f"?token={api_key}&timeout={TIMEOUT}&memory=512"
+    )
+    body = {
+        "postURLs": [video_url],
+        "commentsPerPost": 0,
+        "repliesPerComment": count,
+        "commentIds": [comment_id],
+    }
+
+    async with httpx.AsyncClient(timeout=TIMEOUT + 10) as client:
+        resp = await client.post(run_url, json=body)
+        if resp.status_code not in (200, 201):
+            raise ValueError(
+                f"Apify returned status {resp.status_code}: {resp.text[:300]}"
+            )
+        items = resp.json()
+
+        if not isinstance(items, list) or not items:
+            raise ValueError("No data returned from Apify for replies.")
+
+        print("DEBUG scrape_replies — items[0] keys:", list(items[0].keys()))
+
+        replies_dataset_url = (
+            items[0].get("repliesDatasetUrl")
+            or items[0].get("commentsDatasetUrl")
+            or items[0].get("datasetUrl")
+        )
+
+        if replies_dataset_url:
+            sep = "&" if "?" in replies_dataset_url else "?"
+            replies_url = f"{replies_dataset_url}{sep}token={api_key}&limit={count}"
+            rresp = await client.get(replies_url)
+            if rresp.status_code != 200:
+                raise ValueError(
+                    f"Failed to fetch replies dataset: status {rresp.status_code}"
+                )
+            raw_replies = rresp.json()
+        else:
+            raw_replies = (
+                items[0].get("replies")
+                or items[0].get("latestComments")
+                or []
+            )
+            if not raw_replies:
+                raise ValueError(
+                    "Apify did not return any replies data. "
+                    "Check server logs for the available response keys."
+                )
+
+    if not isinstance(raw_replies, list):
+        raise ValueError(f"Unexpected replies format: {str(raw_replies)[:200]}")
+
+    replies = []
+    for item in raw_replies:
+        posted_raw = item.get("createTimeISO") or item.get("createTime")
+        posted = _parse_date(posted_raw)
+        replies.append({
+            "id": item.get("cid") or item.get("id") or "",
+            "username": item.get("uniqueId") or item.get("uid") or "",
+            "avatar": item.get("avatarThumbnail") or item.get("avatarThumb") or "",
+            "text": item.get("text") or item.get("comment") or "",
+            "likes": item.get("diggCount") or 0,
+            "posted": posted or "",
+        })
+
+    return replies
