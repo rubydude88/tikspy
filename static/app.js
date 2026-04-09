@@ -5,6 +5,13 @@ let commentsData = [];
 let currentTab = 'videos';
 let settingsOpen = false;
 
+// Tracks which comment_id is currently loading or expanded
+// { [comment_id]: 'loading' | 'open' | 'closed' }
+const replyState = {};
+
+// Tracks the current video_url being viewed in comments tab
+let currentVideoUrl = '';
+
 // ── Settings ─────────────────────────────────────────────────────
 async function loadSettingsStatus() {
   const savedKey = localStorage.getItem('apify_api_key');
@@ -252,9 +259,7 @@ function renderVideosTable() {
       img.src = v.thumbnail;
       img.alt = '';
       img.className = 'thumbnail';
-      img.onerror = () => {
-        img.replaceWith(makePlaceholderThumb());
-      };
+      img.onerror = () => { img.replaceWith(makePlaceholderThumb()); };
       tdThumb.appendChild(img);
     } else {
       tdThumb.appendChild(makePlaceholderThumb());
@@ -264,7 +269,7 @@ function renderVideosTable() {
     const tdCap = document.createElement('td');
     const capDiv = document.createElement('div');
     capDiv.className = 'caption-cell';
-    capDiv.textContent = truncate(v.caption, 80);
+    capDiv.textContent = v.caption || '—';
     capDiv.title = v.caption || '';
     tdCap.appendChild(capDiv);
     tr.appendChild(tdCap);
@@ -351,9 +356,13 @@ async function fetchComments() {
 
   const count = parseInt(document.getElementById('comment-count').value) || 50;
 
+  // Reset reply state when fetching fresh comments
+  Object.keys(replyState).forEach(k => delete replyState[k]);
+  currentVideoUrl = video_url;
+
   const btn = document.getElementById('btn-fetch-comments');
   setButtonLoading(btn, true);
-  showLoading('comments-tbody', 6);
+  showLoading('comments-tbody', 7);
   document.getElementById('comments-export-row').style.display = 'none';
   document.getElementById('error-banner').classList.add('hidden');
 
@@ -386,7 +395,7 @@ async function fetchComments() {
 function renderCommentsEmpty() {
   document.getElementById('comments-tbody').innerHTML = `
     <tr class="empty-state-row">
-      <td colspan="6">
+      <td colspan="7">
         <div class="empty-state">
           <div class="empty-icon">&#9675;</div>
           <div>No comments found.</div>
@@ -403,53 +412,236 @@ function renderCommentsTable() {
   }
   tbody.innerHTML = '';
   commentsData.forEach((c) => {
-    const tr = document.createElement('tr');
-
-    const tdAv = document.createElement('td');
-    if (c.avatar) {
-      const img = document.createElement('img');
-      img.src = c.avatar;
-      img.alt = c.username ? c.username[0] : '?';
-      img.className = 'avatar';
-      img.onerror = () => img.replaceWith(makeAvatarPlaceholder(c.username));
-      tdAv.appendChild(img);
-    } else {
-      tdAv.appendChild(makeAvatarPlaceholder(c.username));
-    }
-    tr.appendChild(tdAv);
-
-    const tdUser = document.createElement('td');
-    tdUser.className = 'username-cell';
-    tdUser.textContent = c.username || '—';
-    tr.appendChild(tdUser);
-
-    const tdComment = document.createElement('td');
-    const commentDiv = document.createElement('div');
-    commentDiv.className = 'comment-cell';
-    commentDiv.textContent = truncate(c.text, 120);
-    commentDiv.title = c.text || '';
-    tdComment.appendChild(commentDiv);
-    tr.appendChild(tdComment);
-
-    tr.appendChild(numCell(c.likes));
-
-    const tdRep = numCell(c.replies);
-    tdRep.classList.add('hide-mobile');
-    tr.appendChild(tdRep);
-
-    const tdPost = document.createElement('td');
-    tdPost.className = 'date-cell hide-mobile';
-    tdPost.textContent = relativeTime(c.posted);
-    tdPost.title = c.posted || '';
-    tr.appendChild(tdPost);
-
-    tbody.appendChild(tr);
+    tbody.appendChild(makeCommentRow(c));
   });
 }
 
-function makeAvatarPlaceholder(username) {
+function makeCommentRow(c) {
+  const tr = document.createElement('tr');
+  tr.dataset.commentId = c.id;
+  tr.className = 'comment-row';
+
+  // Avatar
+  const tdAv = document.createElement('td');
+  if (c.avatar) {
+    const img = document.createElement('img');
+    img.src = c.avatar;
+    img.alt = c.username ? c.username[0] : '?';
+    img.className = 'avatar';
+    img.onerror = () => img.replaceWith(makeAvatarPlaceholder(c.username));
+    tdAv.appendChild(img);
+  } else {
+    tdAv.appendChild(makeAvatarPlaceholder(c.username));
+  }
+  tr.appendChild(tdAv);
+
+  // Username
+  const tdUser = document.createElement('td');
+  tdUser.className = 'username-cell';
+  tdUser.textContent = c.username || '—';
+  tr.appendChild(tdUser);
+
+  // Comment text
+  const tdComment = document.createElement('td');
+  const commentDiv = document.createElement('div');
+  commentDiv.className = 'comment-cell';
+  commentDiv.textContent = truncate(c.text, 120);
+  commentDiv.title = c.text || '';
+  tdComment.appendChild(commentDiv);
+  tr.appendChild(tdComment);
+
+  // Likes
+  tr.appendChild(numCell(c.likes));
+
+  // Replies — clickable if count > 0
+  const tdRep = document.createElement('td');
+  tdRep.className = 'num-cell hide-mobile';
+  if (c.replies > 0 && c.id) {
+    const btn = document.createElement('button');
+    btn.className = 'btn-replies';
+    btn.id = `btn-replies-${c.id}`;
+    btn.textContent = `▶ ${c.replies} repl${c.replies !== 1 ? 'ies' : 'y'}`;
+    btn.title = 'Click to load replies';
+    btn.onclick = () => toggleReplies(c.id, c.replies);
+    tdRep.appendChild(btn);
+  } else {
+    tdRep.textContent = '—';
+  }
+  tr.appendChild(tdRep);
+
+  // Posted
+  const tdPost = document.createElement('td');
+  tdPost.className = 'date-cell hide-mobile';
+  tdPost.textContent = relativeTime(c.posted);
+  tdPost.title = c.posted || '';
+  tr.appendChild(tdPost);
+
+  return tr;
+}
+
+// ── Replies ───────────────────────────────────────────────────────
+async function toggleReplies(commentId, replyCount) {
+  const state = replyState[commentId];
+
+  // If already open, collapse
+  if (state === 'open') {
+    collapseReplies(commentId);
+    return;
+  }
+
+  // If already loading, do nothing
+  if (state === 'loading') return;
+
+  const btn = document.getElementById(`btn-replies-${commentId}`);
+  const api_key = localStorage.getItem('apify_api_key') || '';
+
+  replyState[commentId] = 'loading';
+  if (btn) {
+    btn.textContent = '⏳ Loading…';
+    btn.disabled = true;
+  }
+
+  try {
+    const res = await fetch('/scrape/replies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        video_url: currentVideoUrl,
+        comment_id: commentId,
+        api_key,
+        count: replyCount,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      showError(data.error);
+      replyState[commentId] = 'closed';
+      if (btn) {
+        btn.textContent = `▶ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`;
+        btn.disabled = false;
+      }
+      return;
+    }
+
+    const replies = data.replies || [];
+    insertReplyRows(commentId, replies, replyCount);
+    replyState[commentId] = 'open';
+
+    if (btn) {
+      btn.textContent = `▼ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`;
+      btn.disabled = false;
+    }
+  } catch (e) {
+    showError('Network error fetching replies: ' + e.message);
+    replyState[commentId] = 'closed';
+    if (btn) {
+      btn.textContent = `▶ ${replyCount} repl${replyCount !== 1 ? 'ies' : 'y'}`;
+      btn.disabled = false;
+    }
+  }
+}
+
+function insertReplyRows(commentId, replies, replyCount) {
+  const tbody = document.getElementById('comments-tbody');
+  // Find the parent comment row
+  const parentRow = tbody.querySelector(`tr[data-comment-id="${commentId}"]`);
+  if (!parentRow) return;
+
+  // Remove any existing reply rows for this comment first
+  removeReplyRows(commentId);
+
+  if (!replies.length) {
+    const emptyTr = document.createElement('tr');
+    emptyTr.className = 'reply-row';
+    emptyTr.dataset.parentId = commentId;
+    emptyTr.innerHTML = `
+      <td></td>
+      <td colspan="5" class="reply-empty">No replies could be loaded.</td>`;
+    parentRow.insertAdjacentElement('afterend', emptyTr);
+    return;
+  }
+
+  // Insert reply rows in reverse so insertAdjacentElement('afterend') keeps order
+  [...replies].reverse().forEach((r) => {
+    const tr = makeReplyRow(r, commentId);
+    parentRow.insertAdjacentElement('afterend', tr);
+  });
+}
+
+function makeReplyRow(r, parentId) {
+  const tr = document.createElement('tr');
+  tr.className = 'reply-row';
+  tr.dataset.parentId = parentId;
+
+  // Indent cell
+  const tdIndent = document.createElement('td');
+  tdIndent.className = 'reply-indent';
+  tdIndent.innerHTML = '<span class="reply-line">└</span>';
+  tr.appendChild(tdIndent);
+
+  // Avatar
+  const tdAv = document.createElement('td');
+  if (r.avatar) {
+    const img = document.createElement('img');
+    img.src = r.avatar;
+    img.alt = r.username ? r.username[0] : '?';
+    img.className = 'avatar avatar-sm';
+    img.onerror = () => img.replaceWith(makeAvatarPlaceholder(r.username, true));
+    tdAv.appendChild(img);
+  } else {
+    tdAv.appendChild(makeAvatarPlaceholder(r.username, true));
+  }
+  tr.appendChild(tdAv);
+
+  // Username + text combined (replies are more compact)
+  const tdMain = document.createElement('td');
+  tdMain.colSpan = 2;
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'reply-username';
+  nameSpan.textContent = r.username || '—';
+  const textDiv = document.createElement('div');
+  textDiv.className = 'comment-cell reply-text';
+  textDiv.textContent = truncate(r.text, 120);
+  textDiv.title = r.text || '';
+  tdMain.appendChild(nameSpan);
+  tdMain.appendChild(textDiv);
+  tr.appendChild(tdMain);
+
+  // Likes
+  const tdLikes = numCell(r.likes);
+  tr.appendChild(tdLikes);
+
+  // Posted
+  const tdPost = document.createElement('td');
+  tdPost.className = 'date-cell hide-mobile';
+  tdPost.colSpan = 2;
+  tdPost.textContent = relativeTime(r.posted);
+  tdPost.title = r.posted || '';
+  tr.appendChild(tdPost);
+
+  return tr;
+}
+
+function collapseReplies(commentId) {
+  removeReplyRows(commentId);
+  replyState[commentId] = 'closed';
+  const btn = document.getElementById(`btn-replies-${commentId}`);
+  if (btn) {
+    const comment = commentsData.find(c => c.id === commentId);
+    const count = comment ? comment.replies : 0;
+    btn.textContent = `▶ ${count} repl${count !== 1 ? 'ies' : 'y'}`;
+  }
+}
+
+function removeReplyRows(commentId) {
+  const tbody = document.getElementById('comments-tbody');
+  tbody.querySelectorAll(`tr[data-parent-id="${commentId}"]`).forEach(r => r.remove());
+}
+
+function makeAvatarPlaceholder(username, small = false) {
   const div = document.createElement('div');
-  div.className = 'avatar-placeholder';
+  div.className = small ? 'avatar-placeholder avatar-placeholder-sm' : 'avatar-placeholder';
   div.textContent = username ? username[0].toUpperCase() : '?';
   return div;
 }
