@@ -13,7 +13,7 @@ async function loadSettingsStatus() {
     const el = document.getElementById('settings-status');
     if (data.configured) {
       el.className = 'settings-status ok';
-      el.textContent = `Active key: ${data.masked}`;
+      el.textContent = 'API key: Saved ✓';
     } else {
       el.className = 'settings-status warn';
       el.textContent = 'No API key configured — scraping will not work.';
