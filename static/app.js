@@ -81,6 +81,13 @@ function switchTab(tab) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
+function getTimestamp() {
+  const now = new Date();
+  const pad = (n) => n.toString().padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_` +
+         `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+}
+
 function formatNum(n) {
   n = Number(n) || 0;
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -608,25 +615,30 @@ function flattenComments(comments) {
 
 function exportVideosCSV() {
   if (!videosData.length) return;
-  downloadBlob(toCSV(flattenVideos(videosData)), 'tikspy_videos.csv', 'text/csv');
+  const filename = `tikspy_videos_${getTimestamp()}.csv`;
+  downloadBlob(toCSV(flattenVideos(videosData)), filename, 'text/csv');
 }
+
 function exportVideosXLSX() {
   if (!videosData.length) return;
   const ws = XLSX.utils.json_to_sheet(flattenVideos(videosData));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Videos');
-  XLSX.writeFile(wb, 'tikspy_videos.xlsx');
+  XLSX.writeFile(wb, `tikspy_videos_${getTimestamp()}.xlsx`);
 }
+
 function exportCommentsCSV() {
   if (!commentsData.length) return;
-  downloadBlob(toCSV(flattenComments(commentsData)), 'tikspy_comments.csv', 'text/csv');
+  const filename = `tikspy_comments_${getTimestamp()}.csv`;
+  downloadBlob(toCSV(flattenComments(commentsData)), filename, 'text/csv');
 }
+
 function exportCommentsXLSX() {
   if (!commentsData.length) return;
   const ws = XLSX.utils.json_to_sheet(flattenComments(commentsData));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Comments');
-  XLSX.writeFile(wb, 'tikspy_comments.xlsx');
+  XLSX.writeFile(wb, `tikspy_comments_${getTimestamp()}.xlsx`);
 }
 
 // ── Init ─────────────────────────────────────────────────────────
