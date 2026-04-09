@@ -46,6 +46,8 @@ async def health():
     return {"status": "ok"}
 
 
+# ── Models ────────────────────────────────────────────────────────
+
 class VideoRequest(BaseModel):
     username: str
     api_key: str
@@ -59,6 +61,15 @@ class CommentRequest(BaseModel):
     api_key: str
     count: int = 50
 
+
+class ReplyRequest(BaseModel):
+    video_url: str
+    comment_id: str
+    api_key: str
+    count: int = 20
+
+
+# ── Handlers ──────────────────────────────────────────────────────
 
 async def _scrape_videos(req: VideoRequest):
     api_key = req.api_key.strip()
@@ -108,6 +119,32 @@ async def _scrape_comments(req: CommentRequest):
         return {"comments": [], "total": 0, "error": str(e)}
 
 
+async def _scrape_replies(req: ReplyRequest):
+    api_key = req.api_key.strip()
+    if not api_key:
+        return {"replies": [], "total": 0, "error": "API key is required"}
+
+    key = cache.make_key("replies", api_key, req.video_url, req.comment_id, req.count)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        replies = await scraper.scrape_replies(
+            api_key=api_key,
+            video_url=req.video_url,
+            comment_id=req.comment_id,
+            count=req.count,
+        )
+        result = {"replies": replies, "total": len(replies)}
+        cache.set(key, result)
+        return result
+    except Exception as e:
+        return {"replies": [], "total": 0, "error": str(e)}
+
+
+# ── Routes ────────────────────────────────────────────────────────
+
 @app.post("/scrape/videos")
 async def scrape_videos(req: VideoRequest):
     return await _scrape_videos(req)
@@ -116,6 +153,11 @@ async def scrape_videos(req: VideoRequest):
 @app.post("/scrape/comments")
 async def scrape_comments(req: CommentRequest):
     return await _scrape_comments(req)
+
+
+@app.post("/scrape/replies")
+async def scrape_replies(req: ReplyRequest):
+    return await _scrape_replies(req)
 
 
 # Legacy aliases so old cached frontends keep working
