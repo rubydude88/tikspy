@@ -7,9 +7,8 @@ BASE_URL = "https://api.apify.com/v2/acts"
 TIMEOUT = 90
 
 # How many videos to fetch per Apify call when paginating for date range.
-_PAGE_SIZE = 50
-
-_MAX_CRAWL = 500
+_PAGE_SIZE = 30
+_MAX_CRAWL = 300
 
 
 def _normalize_username(username: str) -> str:
@@ -135,76 +134,89 @@ async def scrape_videos(
     if not api_key:
         raise ValueError("API key is required")
 
-    # Parse date bounds once
     from_dt = _parse_dt(date_from) if date_from else None
     to_dt = _parse_dt(date_to) if date_to else None
 
-    # If date_to is a date-only input, make it inclusive until end of day UTC
+    # Make date_to inclusive until end of day
     if date_to:
         s = str(date_to).strip()
         if re.match(r"^\d{2}/\d{2}/\d{4}$", s) or re.match(r"^\d{4}-\d{2}-\d{2}$", s):
             if to_dt:
                 to_dt = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-    # If no date filter, simple single fetch — same behaviour as before
+    # No date filter: simple fetch
     if not from_dt and not to_dt:
         async with httpx.AsyncClient(timeout=TIMEOUT + 10) as client:
             items = await _fetch_page(client, api_key, username, limit)
         return [_item_to_video(i) for i in items[:limit]]
 
-    # Date filter is active — paginate until we collect `limit` matching videos
-    # or we've crawled _MAX_CRAWL videos total (cost guard).
     matched: list[dict] = []
-    total_crawled = 0
-    # We fetch in chunks of _PAGE_SIZE. Each call always starts from the
-    # beginning (the actor doesn't support true cursor pagination), so we
-    # increase the page size each round to reach deeper into the profile.
+    seen_ids: set[str] = set()
     fetch_size = _PAGE_SIZE
 
     async with httpx.AsyncClient(timeout=TIMEOUT + 10) as client:
-        while len(matched) < limit and total_crawled < _MAX_CRAWL:
+        while fetch_size <= _MAX_CRAWL:
             items = await _fetch_page(client, api_key, username, fetch_size)
 
-            # No more videos on the profile
             if not items:
                 break
 
-            # Convert all items
             videos = [_item_to_video(i) for i in items]
-            total_crawled = len(videos)  # actor always returns from latest
 
-            stop_early = False
+            # Deduplicate because larger fetch_size will include earlier results again
+            new_videos = []
             for v in videos:
-                pub_dt = _parse_dt(v["published"])
-
-                # If we've gone past the from_dt boundary going back in time,
-                # there's nothing older to find — stop paginating.
-                if from_dt and pub_dt and pub_dt < from_dt:
-                    stop_early = True
-                    break
-
-                # Skip videos newer than to_dt
-                if to_dt and pub_dt and pub_dt > to_dt:
+                vid = v.get("id") or v.get("url")
+                if not vid or vid in seen_ids:
                     continue
+                seen_ids.add(vid)
+                new_videos.append(v)
 
-                matched.append(v)
-                if len(matched) >= limit:
-                    break
-
-            if stop_early:
+            if not new_videos and fetch_size > _PAGE_SIZE:
+                # No new data found when going deeper
                 break
 
-            # If the actor returned fewer videos than we asked for,
-            # the profile has no more content.
+            reached_older_than_from = False
+
+            for v in videos:
+                pub_dt = _parse_dt(v.get("published"))
+
+                if not pub_dt:
+                    continue
+
+                # If we already reached content older than from_dt,
+                # we can stop after this batch
+                if from_dt and pub_dt < from_dt:
+                    reached_older_than_from = True
+                    continue
+
+                if to_dt and pub_dt > to_dt:
+                    continue
+
+                if from_dt and pub_dt < from_dt:
+                    continue
+
+                vid = v.get("id") or v.get("url")
+                if vid and not any((m.get("id") or m.get("url")) == vid for m in matched):
+                    matched.append(v)
+
+            if reached_older_than_from:
+                break
+
+            # If actor returned fewer than requested, profile is exhausted
             if len(items) < fetch_size:
                 break
 
-            # Increase fetch size to go deeper next iteration.
-            # Cap at _MAX_CRAWL to avoid excessive costs.
-            fetch_size = min(fetch_size + _PAGE_SIZE, _MAX_CRAWL)
+            fetch_size += _PAGE_SIZE
+
+    # Sort safely by published descending
+    matched.sort(
+        key=lambda x: _parse_dt(x.get("published")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
 
     return matched[:limit]
-
+    
 
 async def scrape_comments(api_key: str, video_url: str, count: int = 50) -> list[dict]:
     if not video_url:
