@@ -1,15 +1,14 @@
 import re
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 BASE_URL = "https://api.apify.com/v2/acts"
 TIMEOUT = 90
 
 # How many videos to fetch per Apify call when paginating for date range.
-# Larger = fewer API calls but more Apify compute per call.
-_PAGE_SIZE = 30
-# Hard cap on total videos fetched across all pages to avoid runaway costs.
+_PAGE_SIZE = 50
+
 _MAX_CRAWL = 500
 
 
@@ -35,13 +34,33 @@ def _parse_date(value) -> str | None:
     return None
 
 
-def _parse_dt(iso: str | None):
-    """Parse an ISO string to a timezone-aware datetime, or None."""
-    if not iso:
+def _parse_dt(value: str | None):
+    """Parse supported date formats into UTC timezone-aware datetime."""
+    if not value:
         return None
+
     try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt
+        s = str(value).strip()
+
+        # Support dd/mm/yyyy from frontend
+        if re.match(r"^\d{2}/\d{2}/\d{4}$", s):
+            dt = datetime.strptime(s, "%d/%m/%Y")
+            return dt.replace(tzinfo=timezone.utc)
+
+        # Support yyyy-mm-dd
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+            dt = datetime.strptime(s, "%Y-%m-%d")
+            return dt.replace(tzinfo=timezone.utc)
+
+        # Support ISO strings, with or without timezone
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+        # If naive, force UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        return dt.astimezone(timezone.utc)
+
     except Exception:
         return None
 
@@ -119,6 +138,13 @@ async def scrape_videos(
     # Parse date bounds once
     from_dt = _parse_dt(date_from) if date_from else None
     to_dt = _parse_dt(date_to) if date_to else None
+
+    # If date_to is a date-only input, make it inclusive until end of day UTC
+    if date_to:
+        s = str(date_to).strip()
+        if re.match(r"^\d{2}/\d{2}/\d{4}$", s) or re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+            if to_dt:
+                to_dt = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
 
     # If no date filter, simple single fetch — same behaviour as before
     if not from_dt and not to_dt:
